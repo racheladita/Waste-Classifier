@@ -7,37 +7,29 @@
 
 An automated waste classification system implementing Computer Vision and Machine Learning techniques to facilitate recycling efficiency. This project utilizes the Scale-Invariant Feature Transform (SIFT) for feature extraction and Support Vector Machines (SVM) for classification.
 
-## 📊 System Pipeline
+## 🏗️ Production Architecture
+
+The system is designed to be served as a microservice. The following diagram illustrates the inference pipeline when deployed via FastAPI:
 
 ```mermaid
-graph TD
-    subgraph Training Phase
-        T1[(TrashNet Dataset)] --> |85% Split| T2[Training Images]
-        T2 --> T3[SIFT Feature Extraction]
-        T3 --> |Millions of Descriptors| T4[K-Means Clustering]
-        T4 --> |250 Words| T5[Visual Vocabulary]
-        T3 --> T6[Vector Quantization]
-        T5 --> T6
-        T6 --> |Histograms| T7[Train SVM Classifier]
-        T7 --> |trashnet.pkl| T8[(Serialized Model)]
+graph LR
+    User([User/Client]) -->|POST /predict| API[FastAPI Server]
+    subgraph Inference Pipeline
+        API -->|Convert to Gray| Pre[Preprocessing]
+        Pre -->|Feature Ext| SIFT[SIFT Extraction]
+        SIFT -->|Quantization| BoVW[Visual Vocabulary Mapping]
+        BoVW -->|Histogram| SVM[SVM Classifier]
     end
+    SVM -->|Prediction Label| API
+    API -->|JSON Response| User
 
-    subgraph Inference Phase
-        I1[New Image] --> I2[SIFT Feature Extraction]
-        I2 --> I3[Vector Quantization]
-        T5 -.-> |Load Vocabulary| I3
-        I3 --> |Histogram| I4[Predict with SVM]
-        T8 -.-> |Load Model| I4
-        I4 --> I5([Predicted Class: Glass, Metal, etc.])
-    end
-
-    style T8 fill:#f96,stroke:#333,stroke-width:2px,color:#000
-    style I5 fill:#9f9,stroke:#333,stroke-width:2px,color:#000
+    style API fill:#4f4f8f,stroke:#333,stroke-width:2px
+    style Inference Pipeline fill:#f0f0f0,stroke:#333,stroke-dasharray: 5 5
 ```
 
 ## 📖 Project Overview
 
-The objective is to classify solid waste into six categories: **Cardboard, Glass, Metal, Paper, Plastic, and Trash**. The implementation follows a **Bag of Visual Words (BoVW)** pipeline, providing a transparent approach to feature quantification and classification compared to opaque end-to-end models.
+The objective is to classify solid waste into six categories: **Cardboard, Glass, Metal, Paper, Plastic, and Trash**. This implementation uses a **Bag of Visual Words (BoVW)** approach, which provides a more interpretable pipeline than deep learning models by explicitly defining a visual vocabulary from local image features.
 
 ## 🛠️ Methodology
 
@@ -56,17 +48,6 @@ While modern deep learning (CNNs) dominates image classification, this project i
 - **K-Means as a Feature Compressor**: By clustering descriptors into a 250-word vocabulary, the system effectively compresses high-dimensional image data into a compact 250-dimension histogram, significantly reducing the computational cost of the final SVM classification.
 - **Kernel Selection**: The **RBF Kernel** was chosen to handle the non-linear distribution of visual words in the feature space, allowing for more complex decision boundaries between similar categories (e.g., Plastic vs. Glass).
 
-## ⚙️ Backend Integration Potential
-
-From a backend engineering perspective, the system is designed for **portability and integration**:
-
-- **Model Serialization**: Using `joblib`, the trained SVM classifier and the visual vocabulary (`voc`) are serialized into a single `trashnet.pkl` file. This allows the model to be loaded into a production environment (such as a FastAPI or Flask microservice) without retraining.
-- **Inference Pipeline**: The inference logic is decoupled from training. To process a new request, the backend only needs to:
-  1.  Perform SIFT extraction on the input image.
-  2.  Quantize features using the pre-loaded vocabulary.
-  3.  Run the prediction via the SVM.
-- **Decoupled Architecture**: The data extraction and organizing logic are scripted to ensure that the dataset pipeline is reproducible and can be easily adapted for different data sources.
-
 ## 📊 Dataset: TrashNet
 
 The model is trained and evaluated on the [TrashNet dataset](https://github.com/garythung/trashnet), consisting of 2,527 images of waste objects.
@@ -74,17 +55,50 @@ The model is trained and evaluated on the [TrashNet dataset](https://github.com/
 - **Training Set**: 85%
 - **Test Set**: 15%
 
-## 🚀 Installation & Requirements
+## 🚀 Quick Start
 
-This project is compatible with Python environments version 3.10 and above.
+### 1. Installation
+
+Ensure you have Python 3.10+ installed. Install the required libraries:
 
 ```bash
-pip install opencv-contrib-python numpy scipy scikit-learn joblib matplotlib seaborn pandas
+pip install -r requirements.txt
 ```
 
-## 📈 Results
+### 2. Run Inference Server (API)
 
-Evaluation results on the test set:
+A FastAPI server is provided for programmatic access.
+
+```bash
+python app.py
+```
+
+The server will start at `http://localhost:8000`. You can access the interactive API docs at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+### 3. Run Web Dashboard (User Interface)
+
+For a more user-friendly experience, run the Streamlit dashboard:
+
+```bash
+streamlit run ui.py
+```
+
+This will open an interface in your browser where you can upload images and see the visual feature distribution.
+
+## 📈 Results & Analysis
+
+### Performance Metrics
+
+The model exhibits a typical variance gap between training and testing, indicating sensitivity to lighting and background noise:
+
+| Metric                | Accuracy  |
+| :-------------------- | :-------- |
+| **Training Accuracy** | **88.2%** |
+| **Test Accuracy**     | **62.7%** |
+
+> **Note:** Individual predictions may vary due to the classical nature of SIFT features compared to modern deep learning.
+
+### Test Set Detailed Report
 
 | Category      | Precision | Recall | F1-Score |
 | :------------ | :-------- | :----- | :------- |
@@ -95,12 +109,19 @@ Evaluation results on the test set:
 | **Glass**     | 0.448     | 0.618  | 0.519    |
 | **Trash**     | 0.500     | 0.143  | 0.222    |
 
-**Overall Test Accuracy: 62.7%**
+## 🔮 Limitations & Future Work
+
+- **Overfitting**: The gap between training (88%) and test (63%) accuracy suggests the model is highly specialized to the training background/lighting.
+- **Deep Learning Comparison**: While SIFT+SVM is transparent and efficient for small datasets, a Transfer Learning approach (e.g., using ResNet or EfficientNet) would likely yield >90% test accuracy.
+- **Data Augmentation**: Future iterations should include geometric and color jittering to improve robustness.
 
 ## 📂 Repository Structure
 
-- `Waste_Classifier.ipynb`: Complete pipeline from data extraction to evaluation.
-- `trashnet.pkl`: Pre-trained SVM model and visual vocabulary.
+- `ui.py`: Streamlit web dashboard.
+- `app.py`: FastAPI inference server.
+- `waste_classifier.ipynb`: Data pipeline, training, and evaluation notebook.
+- `trashnet.pkl`: Serialized model, class names, and visual vocabulary.
+- `requirements.txt`: Project dependencies.
 
 ---
 
